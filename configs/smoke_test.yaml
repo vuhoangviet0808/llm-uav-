@@ -1,0 +1,43 @@
+# Offline smoke-test config: tiny randomly-initialized model + tiny
+# character tokenizer + tiny dataset, runs on CPU in well under a minute.
+# This only verifies the pipeline's mechanics (data gen -> tokenize ->
+# LoRA -> train -> generate -> parse -> score) are wired correctly.
+# It proves nothing about real pathfinding quality -- for that, run with
+# configs/default.yaml on a machine with a GPU and a real ~1B model.
+
+data:
+  train_size: 300
+  val_size: 30
+  test_size: 30
+  grid_size_range: [4, 5]
+  obstacle_density_range: [0.05, 0.15]
+  min_optimal_len: 2
+  seed: 0
+  out_dir: data_smoke
+
+model:
+  name: tiny-debug
+  max_length: 600   # char-tokenizer + verbose instruction eats far more "tokens"
+                    # than a real BPE tokenizer would -- keep this generous
+
+lora:
+  r: 8
+  alpha: 16
+  dropout: 0.0
+  target_modules: ["c_attn"]
+
+train:
+  output_dir: outputs_smoke/lora-tiny
+  num_train_epochs: 12
+  per_device_train_batch_size: 8
+  gradient_accumulation_steps: 1
+  learning_rate: 5.0e-4
+  logging_steps: 5
+  save_steps: 1000
+  eval_steps: 1000
+  bf16: false
+  max_steps: -1
+
+eval:
+  max_new_tokens: 32
+  report_path: outputs_smoke/eval_report.json

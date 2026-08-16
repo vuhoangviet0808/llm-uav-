@@ -1,0 +1,48 @@
+# Real run config: fine-tunes a ~1B-parameter open LLM with LoRA.
+# Needs: a machine with a GPU (even a small one, e.g. 8GB VRAM, is enough
+# for LoRA on a 1B model) and internet access to huggingface.co.
+# Defaults below are tuned to just work on a free Google Colab T4 GPU.
+
+data:
+  train_size: 3000
+  val_size: 200
+  test_size: 200
+  grid_size_range: [6, 12]       # grids sampled uniformly between 6x6 and 12x12
+  obstacle_density_range: [0.10, 0.25]
+  min_optimal_len: 3
+  seed: 42
+  out_dir: data
+
+model:
+  # ~1B Llama as requested. Requires accepting Meta's license on
+  # huggingface.co/meta-llama/Llama-3.2-1B-Instruct and an HF token
+  # (`huggingface-cli login`, or set HF_TOKEN env var).
+  name: meta-llama/Llama-3.2-1B-Instruct
+  # No HF account / gated-license hassle? Swap to an equivalent open model,
+  # e.g.:  Qwen/Qwen2.5-0.5B-Instruct   or   HuggingFaceTB/SmolLM2-1.7B-Instruct
+  max_length: 640
+
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules: null   # null = auto-detect (q_proj/k_proj/v_proj/o_proj for Llama)
+
+train:
+  output_dir: outputs/lora-pathfinding
+  num_train_epochs: 3
+  per_device_train_batch_size: 4
+  gradient_accumulation_steps: 4
+  learning_rate: 2.0e-4
+  logging_steps: 20
+  save_steps: 200
+  eval_steps: 200
+  # T4 (free Colab) doesn't support bf16 well -- use fp16 there.
+  # On an A100/newer GPU (Colab Pro), flip these: bf16 true, fp16 false.
+  bf16: false
+  fp16: true
+  max_steps: -1 # -1 = run full num_train_epochs
+
+eval:
+  max_new_tokens: 96
+  report_path: outputs/eval_report.json

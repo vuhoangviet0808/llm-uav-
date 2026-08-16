@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Generated datasets and training outputs -- regenerate with the scripts,
+# don't commit them.
+data/*
+!data/.gitkeep
+data_smoke/*
+!data_smoke/.gitkeep
+outputs/*
+!outputs/.gitkeep
+outputs_smoke/*
+!outputs_smoke/.gitkeep
