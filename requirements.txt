@@ -3,11 +3,16 @@ transformers>=4.40
 peft>=0.10
 # peft's LoRA layer dispatch probes several optional quantization backends
 # (torchao, bitsandbytes, ...) even when none are used. If an old torchao is
-# already installed (e.g. Colab's default image), peft raises a hard
+# already installed (e.g. Colab/Kaggle's default image), peft raises a hard
 # ImportError instead of just skipping it. Pin a compatible version so
-# `pip install -r requirements.txt` self-heals this on a fresh Colab runtime.
+# `pip install -r requirements.txt` self-heals this on a fresh runtime.
 torchao>=0.16.0
 accelerate>=0.28
 pyyaml
 matplotlib
 tqdm
+# For the classical-RL (PPO) baseline in src/train_rl.py / src/evaluate_rl.py --
+# only needed if you want to reproduce/retrain that comparison, not for the
+# LLM fine-tuning pipeline itself.
+gymnasium
+stable-baselines3

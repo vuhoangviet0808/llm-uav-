@@ -74,21 +74,13 @@ zero-shot -> fine-tune LoRA -> đánh giá lại model đã fine-tune -> so sán
 báo cáo JSON (`outputs/eval_report_base.json` vs
 `outputs/eval_report_finetuned.json`).
 
-Model mặc định trong `default.yaml` là `Qwen/Qwen2.5-1.5B-Instruct` —
-model mở hoàn toàn (Apache 2.0), chạy được ngay, không cần xin quyền hay
-token gì cả. Đây là lựa chọn nên dùng để chạy thử nhanh.
-
-Nếu vẫn muốn dùng đúng `meta-llama/Llama-3.2-1B-Instruct` (~1B, đúng như đề
-xuất ban đầu): model này bị Meta "gate" trên Hugging Face, sẽ báo lỗi
-`403 GatedRepoError` cho tới khi bạn (1) đăng nhập huggingface.co, vào
-https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct bấm "Agree and
-access repository" (Meta duyệt thủ công, có thể ngay lập tức hoặc mất vài
-giờ), (2) tạo token tại huggingface.co/settings/tokens, và (3) trong Colab
-thực sự chạy ô `from huggingface_hub import login; login()` với token đó
-*trước khi* chạy data_gen/train/evaluate. Sau đó đổi lại `model.name` trong
-config. Nếu chỉ muốn thử ngay không đợi duyệt quyền, sửa nhanh 1 dòng bằng:
-`!sed -i 's|Qwen/Qwen2.5-1.5B-Instruct|meta-llama/Llama-3.2-1B-Instruct|' configs/default.yaml`
-trong 1 ô Colab, sau khi đã login.
+Model mặc định trong `default.yaml` là `meta-llama/Llama-3.2-1B-Instruct`
+(đúng ~1B tham số như bạn muốn). Model này bị "gate": cần vào
+huggingface.co/meta-llama/Llama-3.2-1B-Instruct bấm "Agree and access", rồi
+đăng nhập bằng token (`huggingface-cli login` hoặc set biến môi trường
+`HF_TOKEN`). Nếu không muốn xin quyền, đổi `model.name` trong config sang
+một model mở hoàn toàn cùng tầm cỡ, ví dụ `Qwen/Qwen2.5-0.5B-Instruct` hoặc
+`HuggingFaceTB/SmolLM2-1.7B-Instruct` — code không cần sửa gì thêm.
 
 LoRA r=16/alpha=32 trên 1B tham số chạy được trên GPU ~8GB VRAM, kể cả GPU T4
 miễn phí của Colab (config mặc định đã để `fp16: true, bf16: false` vì T4
@@ -132,6 +124,47 @@ Vẽ lưới, đường BFS-optimal (xanh) và đường model thực sự bay (
 - `unparseable_rate`: tỉ lệ output của model không tách được nước đi hợp lệ
   nào — dấu hiệu model chưa học được đúng định dạng output.
 
+## So sánh với RL cổ điển (PPO) — baseline thứ 3
+
+Để trả lời câu hỏi "LLM fine-tune có tốt hơn cách làm truyền thống của chính
+paper gốc không" (paper gốc dùng PPO), repo có thêm 1 baseline PPO huấn
+luyện trực tiếp cho bài point-to-point pathfinding này (không cần GPU, train
+được trên CPU trong vài phút vì môi trường rất nhẹ):
+
+```bash
+pip install gymnasium stable-baselines3   # đã có trong requirements.txt
+python -m src.train_rl --config configs/default.yaml --timesteps 1200000
+python -m src.evaluate_rl --config configs/default.yaml \
+    --model_path outputs/ppo-pathfinding/ppo_model.zip \
+    --report_path outputs/eval_report_ppo.json
+```
+
+`src/rl_env.py` định nghĩa 1 Gymnasium environment cho bài toán này. Lưu ý
+thiết kế: agent chỉ quan sát 1 cửa sổ cục bộ (mặc định 5x5 ô quanh UAV) +
+hướng/khoảng cách chuẩn hoá tới đích, KHÔNG quan sát toàn bộ bản đồ qua CNN
+như kiến trúc PPO trong paper gốc — lựa chọn này để train nhanh, đơn giản,
+không cần custom CNN feature extractor, nhưng vì vậy đây là một baseline RL
+hợp lý chứ không phải tái hiện chính xác kiến trúc "Learning to Recharge".
+`src/train_rl.py` train trên đúng các instance trong `data/train.jsonl` (lặp
+lại nhiều lần qua hàng trăm nghìn/triệu bước môi trường, vì PPO là on-policy
+RL chứ không phải SFT một lần như LLM). `src/evaluate_rl.py` đánh giá trên
+đúng `data/test.jsonl`, cùng 4 chỉ số với `src.evaluate` (`unparseable_rate`
+luôn = 0 vì PPO luôn xuất ra 1 trong 4 hành động hợp lệ).
+
+**Kết quả thật** (1.2 triệu timesteps, ~5 phút trên CPU, cùng `test.jsonl`
+200 mẫu với LLM fine-tuned): `success_rate = 0.78`, `invalid_move_rate =
+0.005`, `unparseable_rate = 0.0`, `avg_length_ratio_on_success ≈ 1.01`. PPO
+vượt trội rõ rệt so với cả LLM zero-shot (0%) và LLM fine-tuned (35%) trên
+bài toán đơn giản này — dễ hiểu vì PPO được huấn luyện *chuyên biệt* hàng
+triệu lượt tương tác trực tiếp với đúng phân phối bài toán, còn LLM chỉ học
+gián tiếp qua vài nghìn cặp (prompt, completion) tĩnh và phải tổng quát hoá
+suy luận không gian từ kiến trúc ngôn ngữ vốn không chuyên cho việc này.
+Đây không phải bằng chứng "LLM vô dụng" mà là lời nhắc: với 1 bài toán hẹp,
+có simulator rẻ để lấy hàng triệu mẫu, RL cổ điển vẫn là lựa chọn mạnh và rẻ
+hơn nhiều so với fine-tune một LLM — điểm mạnh của LLM nằm ở khả năng
+tổng quát/diễn giải/kết hợp ngôn ngữ tự nhiên, không phải ở việc thay thế
+RL trên chính bài toán RL đã được thiết kế tốt.
+
 ## Mở rộng tiếp (nếu muốn quay lại gần bài toán gốc hơn)
 
 - Thêm pin (`budget`) và action `charge`/`land`/`take off` như trong
@@ -142,28 +175,57 @@ Vẽ lưới, đường BFS-optimal (xanh) và đường model thực sự bay (
 
 ## Troubleshooting
 
-**`ImportError: Found an incompatible version of torchao` khi chạy `src.train`**
-Colab preinstall sẵn một bản `torchao` cũ; `peft` (bản mới) kiểm tra version
-này khi dựng layer LoRA và báo lỗi cứng thay vì bỏ qua, dù ta không hề dùng
-torchao. `requirements.txt` đã pin `torchao>=0.16.0` để tự sửa khi cài từ
-đầu. Nếu bạn đã `pip install` trước khi pull bản mới, chạy thêm:
-```bash
-!pip install -q -U torchao
-```
-rồi chạy lại ô fine-tune (không cần restart runtime).
-
-**`RepositoryNotFoundError` / 404 khi evaluate với `--adapter_dir`**
-Đây là hệ quả của lỗi trên: `train.py` crash giữa chừng nên
-`outputs/lora-pathfinding` chưa từng được tạo, khiến `PeftModel.from_pretrained`
-tưởng đó là tên model trên HF Hub rồi tìm không thấy. Sửa lỗi torchao ở trên
-xong, train chạy xong thật, thư mục này sẽ tồn tại và evaluate chạy bình
-thường.
-
-**Thư mục sau khi `git clone` bị lồng nhau (`llm-uav-/llm-uav-/...`)**
-Nếu `%cd $REPO_DIR` xong mà `!pwd` ra một đường dẫn lặp lại tên repo nhiều
-lần, nghĩa là lúc `git init`/`git add -A` ở máy bạn đã chạy từ thư mục cha
-(`D:\works\New\UAV`) thay vì từ ngay trong `uav-llm-pathfinding`, nên repo
-GitHub đang chứa thêm 1-2 lớp thư mục con thừa. Không làm hỏng việc chạy code
-(các script vẫn tìm đúng `src/`, `configs/` bên trong), nhưng nên dọn lại cho
-gọn: xoá remote, `git init` lại ngay trong thư mục `uav-llm-pathfinding`, add
-lại toàn bộ file, tạo commit mới rồi force-push.
+- **`ImportError: Found an incompatible version of torchao`** khi chạy
+  `src.train`: `peft` dò các quantization backend tùy chọn (torchao,
+  bitsandbytes...) kể cả khi không dùng tới; nếu môi trường (Colab/Kaggle) có
+  sẵn bản torchao cũ, `peft` báo lỗi cứng thay vì bỏ qua. Đã pin
+  `torchao>=0.16.0` trong `requirements.txt` để tự sửa khi cài lại từ đầu.
+  Fix nhanh không cần cài lại toàn bộ: `!pip install -q -U torchao`.
+- **`403 GatedRepoError`** khi tải `meta-llama/Llama-3.2-1B-Instruct`: model
+  bị Meta "gate", cần chấp nhận license + đăng nhập bằng token HF trước. Mặc
+  định `configs/default.yaml` đã đổi sang `Qwen/Qwen2.5-1.5B-Instruct` (không
+  bị gate) để tránh vướng bước này.
+- **Cell `evaluate`/`train` trông như bị treo (đứng yên rất lâu, không in gì
+  thêm)**: `evaluate.py` đã có thanh tiến trình `tqdm`; `train.py` in ngay
+  dòng `torch.cuda.is_available()` + có `StepTimerCallback` in thời gian của
+  5 step đầu (không phụ thuộc `logging_steps`). Nếu log không hề nhích số dù
+  đã chờ rất lâu (hàng chục phút tới hàng giờ), gần như chắc chắn là **không
+  có GPU thật sự** trong phiên chạy đó, không phải một lỗi/deadlock.
+- **Notebook chạy nền trên Kaggle ("Save & Run All"/commit) đứng ở `0/N`
+  hàng giờ không nhích**: nguyên nhân phổ biến nhất là phiên chạy đó **không
+  thật sự có GPU**, dù bạn có chọn Accelerator = GPU trong Settings — Kaggle
+  có thể âm thầm trả về CPU nếu quota GPU tuần đã hết, hoặc nếu bạn đổi
+  Accelerator sau khi đã tạo session mà chưa restart/factory-reset. Cách
+  kiểm tra: xem lại output cell `!nvidia-smi` ngay đầu log của chính phiên
+  đó (không phải chạy lại) — nếu báo lỗi/không có bảng GPU, hoặc log không
+  có dòng `GPU detected: ...` từ `train.py`, thì đúng là chạy CPU. Fine-tune
+  một model ~1.5B trên CPU có thể mất hàng chục phút tới hàng giờ **cho một
+  step**, nên `0/564` đứng yên nhiều giờ liền không phải là bug của code —
+  cần dừng phiên đó, kiểm tra Settings -> Accelerator (chọn lại GPU rồi bấm
+  factory reset/restart session) và trang quota GPU tuần của tài khoản, rồi
+  chạy lại.
+- **`torch.AcceleratorError: CUDA error: no kernel image is available for execution
+  on the device`** (thường kèm warning trước đó dạng `Tesla P100-PCIE-16GB with
+  CUDA capability sm_60 is not compatible with the current PyTorch installation`):
+  đây KHÔNG phải bug của repo này. Kaggle đôi khi gán GPU **Tesla P100**
+  (kiến trúc Pascal, `sm_60`), nhưng bản PyTorch có sẵn trong image Kaggle
+  hiện tại (`2.10+cu128` trở lên) chỉ build kernel cho `sm_70` (Volta) trở
+  lên — PyTorch đã lên lộ trình bỏ hỗ trợ Pascal/Volta cho các bản build
+  CUDA 12.8/12.9 (xem pytorch/pytorch#157517), và đây cũng là lỗi đã được
+  người dùng khác báo lên chính Kaggle/docker-python#1546, hiện chưa được
+  Kaggle xử lý dứt điểm. Cách sửa:
+  1. **Ưu tiên**: vào Settings -> Accelerator, đổi từ "GPU P100" sang **"GPU
+     T4 x2"** (nếu tài khoản có) rồi factory-reset/restart session. T4 dùng
+     kiến trúc Turing (`sm_75`), nằm trong danh sách torch hiện tại vẫn hỗ
+     trợ, không cần sửa gì thêm trong `requirements.txt`.
+  2. Nếu bắt buộc dùng P100, ép cài một bản torch cũ hơn còn hỗ trợ Pascal
+     TRƯỚC khi `pip install -r requirements.txt`, ví dụ:
+     `!pip install -q torch==2.7.1 --index-url https://download.pytorch.org/whl/cu121`
+     (rủi ro: có thể lệch phiên bản với các gói khác Kaggle đã cài sẵn).
+- **Cấu trúc thư mục git bị lồng nhau nhiều lớp** (ví dụ
+  `.../repo/repo/repo/...`) sau khi `git clone`: thường do lỡ chạy
+  `git init`/`git add -A` ở thư mục cha thay vì đúng trong
+  `uav-llm-pathfinding`. Không làm hỏng việc chạy script (đường dẫn tương
+  đối vẫn đúng), nhưng nên dọn lại: xoá `.git` ở thư mục cha nếu có, chỉ giữ
+  `.git` đúng bên trong `uav-llm-pathfinding`, `git add -A && git commit` lại
+  từ đúng cấp thư mục rồi push.
