@@ -21,6 +21,7 @@ import os
 
 import torch
 import yaml
+from tqdm import tqdm
 
 from src.env import GridInstance, apply_moves
 from src.model import load_base_model
@@ -70,7 +71,12 @@ def evaluate(model, tokenizer, test_examples, max_new_tokens=64):
     length_ratios = []
 
     per_example = []
-    for ex in test_examples:
+    # Each iteration calls model.generate() once (no batching), which can take
+    # several seconds per example on a free-tier GPU -- a bare `for` loop here
+    # prints nothing until the very end, which is easy to mistake for a hang.
+    # tqdm gives a live per-example progress bar + running success rate.
+    progress = tqdm(test_examples, desc="evaluating", unit="ex")
+    for ex in progress:
         inst = GridInstance.from_dict(ex["meta"]["instance"])
         optimal_len = ex["meta"]["optimal_len"]
 
@@ -94,6 +100,9 @@ def evaluate(model, tokenizer, test_examples, max_new_tokens=64):
                 length_ratios.append(1.0)
         if invalid:
             n_invalid += 1
+
+        done = len(per_example) + 1
+        progress.set_postfix(success=f"{n_success}/{done}", invalid=n_invalid)
 
         per_example.append({
             "prompt_size": inst.size,
