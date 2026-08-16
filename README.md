@@ -139,3 +139,31 @@ Vẽ lưới, đường BFS-optimal (xanh) và đường model thực sự bay (
 - Thêm target zone cần quét thay vì chỉ 1 điểm G -> quay lại bài coverage.
 - So sánh thêm với Greedy Heuristic thật của uavSim (`src/base/heuristics.py`)
   thay vì chỉ so với BFS, một khi đã thêm pin/coverage.
+
+## Troubleshooting
+
+**`ImportError: Found an incompatible version of torchao` khi chạy `src.train`**
+Colab preinstall sẵn một bản `torchao` cũ; `peft` (bản mới) kiểm tra version
+này khi dựng layer LoRA và báo lỗi cứng thay vì bỏ qua, dù ta không hề dùng
+torchao. `requirements.txt` đã pin `torchao>=0.16.0` để tự sửa khi cài từ
+đầu. Nếu bạn đã `pip install` trước khi pull bản mới, chạy thêm:
+```bash
+!pip install -q -U torchao
+```
+rồi chạy lại ô fine-tune (không cần restart runtime).
+
+**`RepositoryNotFoundError` / 404 khi evaluate với `--adapter_dir`**
+Đây là hệ quả của lỗi trên: `train.py` crash giữa chừng nên
+`outputs/lora-pathfinding` chưa từng được tạo, khiến `PeftModel.from_pretrained`
+tưởng đó là tên model trên HF Hub rồi tìm không thấy. Sửa lỗi torchao ở trên
+xong, train chạy xong thật, thư mục này sẽ tồn tại và evaluate chạy bình
+thường.
+
+**Thư mục sau khi `git clone` bị lồng nhau (`llm-uav-/llm-uav-/...`)**
+Nếu `%cd $REPO_DIR` xong mà `!pwd` ra một đường dẫn lặp lại tên repo nhiều
+lần, nghĩa là lúc `git init`/`git add -A` ở máy bạn đã chạy từ thư mục cha
+(`D:\works\New\UAV`) thay vì từ ngay trong `uav-llm-pathfinding`, nên repo
+GitHub đang chứa thêm 1-2 lớp thư mục con thừa. Không làm hỏng việc chạy code
+(các script vẫn tìm đúng `src/`, `configs/` bên trong), nhưng nên dọn lại cho
+gọn: xoá remote, `git init` lại ngay trong thư mục `uav-llm-pathfinding`, add
+lại toàn bộ file, tạo commit mới rồi force-push.

@@ -1,6 +1,12 @@
 torch
 transformers>=4.40
 peft>=0.10
+# peft's LoRA layer dispatch probes several optional quantization backends
+# (torchao, bitsandbytes, ...) even when none are used. If an old torchao is
+# already installed (e.g. Colab's default image), peft raises a hard
+# ImportError instead of just skipping it. Pin a compatible version so
+# `pip install -r requirements.txt` self-heals this on a fresh Colab runtime.
+torchao>=0.16.0
 accelerate>=0.28
 pyyaml
 matplotlib
