@@ -133,6 +133,10 @@ def main():
                          help="Only evaluate the first N test examples (useful for a quick check).")
     parser.add_argument("--report_path", default=None,
                          help="Override cfg.eval.report_path (handy to keep base-vs-fine-tuned reports separate).")
+    parser.add_argument("--test_path", default=None,
+                         help="Override the test set path (default: cfg.data.out_dir/test.jsonl). "
+                              "Use this to evaluate on an out-of-distribution test set, "
+                              "e.g. data/test_ood.jsonl from src.data_gen_ood, without touching the config.")
     args = parser.parse_args()
 
     with open(args.config) as f:
@@ -144,7 +148,7 @@ def main():
 
     model = load_model_for_eval(model_name, args.adapter_dir, tiny_vocab_size)
 
-    test_path = os.path.join(cfg["data"]["out_dir"], "test.jsonl")
+    test_path = args.test_path or os.path.join(cfg["data"]["out_dir"], "test.jsonl")
     with open(test_path) as f:
         test_examples = [json.loads(line) for line in f]
     if args.limit:

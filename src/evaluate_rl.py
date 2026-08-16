@@ -97,6 +97,10 @@ def main():
     parser.add_argument("--model_path", default="outputs/ppo-pathfinding/ppo_model.zip")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--report_path", default="outputs/eval_report_ppo.json")
+    parser.add_argument("--test_path", default=None,
+                         help="Override the test set path (default: cfg.data.out_dir/test.jsonl). "
+                              "Use this to evaluate on an out-of-distribution test set, "
+                              "e.g. data/test_ood.jsonl from src.data_gen_ood.")
     args = parser.parse_args()
 
     with open(args.config) as f:
@@ -105,7 +109,7 @@ def main():
 
     model = PPO.load(args.model_path)
 
-    test_path = os.path.join(dcfg["out_dir"], "test.jsonl")
+    test_path = args.test_path or os.path.join(dcfg["out_dir"], "test.jsonl")
     with open(test_path) as f:
         test_examples = [json.loads(line) for line in f]
     if args.limit:

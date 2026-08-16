@@ -27,13 +27,29 @@ Reward:
          semantics used to score the LLM, so invalid_move_rate is
          comparable across both approaches)
   -0.01  per valid step (encourages shorter paths)
-  + potential-based shaping: `shaping_coef * (old_manhattan_dist - new_manhattan_dist)`
+  + potential-based shaping: `shaping_coef * (old_potential - new_potential)`
     -- speeds up learning a goal-directed policy from a partial (local-only)
     observation; provably doesn't change the optimal policy (Ng et al. 1999).
+
+`shaping_mode` picks the potential function:
+  "manhattan" (default/original): straight-line distance to the goal. Cheap,
+    but *not obstacle-aware* -- right next to a wall/corner it can reward a
+    move that walks the agent straight into a dead end, because Manhattan
+    distance has no idea an obstacle is in the way.
+  "bfs": true shortest-path distance to the goal through the actual
+    obstacle layout (one reverse BFS from the goal per episode, using the
+    same `MOVE_DELTA`/`is_free` the ground-truth BFS solver uses). This is
+    the "LLM-proposed" improvement discussed in chat: a shaping signal that
+    always points along a real path, never through a wall -- still a valid
+    potential function (doesn't change the optimal policy), just a smarter
+    one than Manhattan distance. See src/train_rl.py's --shaping_mode flag
+    and notebooks/llm_reward_design.ipynb for the side-by-side comparison.
+
 Episode truncates after `steps_per_size * instance.size` steps if neither
 terminal condition is hit (avoids infinite wandering on hard instances).
 """
 import random
+from collections import deque
 
 import gymnasium as gym
 import numpy as np
@@ -50,8 +66,10 @@ class PathfindingEnv(gym.Env):
     def __init__(self, grid_size_range=(6, 12), obstacle_density_range=(0.10, 0.25),
                  min_optimal_len=3, instances=None, seed=None,
                  local_radius=2, max_size_for_norm=12, steps_per_size=6,
-                 shaping_coef=0.1):
+                 shaping_coef=0.1, shaping_mode="manhattan"):
         super().__init__()
+        assert shaping_mode in ("manhattan", "bfs"), shaping_mode
+        self.shaping_mode = shaping_mode
         self.grid_size_range = tuple(grid_size_range)
         self.obstacle_density_range = tuple(obstacle_density_range)
         self.min_optimal_len = min_optimal_len
@@ -94,6 +112,32 @@ class PathfindingEnv(gym.Env):
         gr, gc = self.inst.goal
         return abs(gr - pos[0]) + abs(gc - pos[1])
 
+    def _bfs_distance_map(self):
+        """Reverse BFS from the goal over free cells, respecting obstacles --
+        gives the TRUE shortest-path distance from every reachable cell to
+        the goal, unlike Manhattan distance which ignores the obstacle
+        layout entirely."""
+        goal = self.inst.goal
+        dist = {goal: 0}
+        q = deque([goal])
+        while q:
+            cur = q.popleft()
+            for dr, dc in MOVE_DELTA.values():
+                nxt = (cur[0] + dr, cur[1] + dc)
+                if self.inst.is_free(nxt) and nxt not in dist:
+                    dist[nxt] = dist[cur] + 1
+                    q.append(nxt)
+        return dist
+
+    def _potential(self, pos):
+        if self.shaping_mode == "bfs":
+            # every position the agent can legally occupy is reachable from
+            # the goal by construction (random_instance() only keeps
+            # solvable instances), so this dict lookup should always hit;
+            # Manhattan distance is only a defensive fallback.
+            return self._dist_map.get(pos, self._manhattan(pos))
+        return self._manhattan(pos)
+
     def _encode(self):
         r0 = self.local_radius
         win = 2 * r0 + 1
@@ -119,6 +163,8 @@ class PathfindingEnv(gym.Env):
         self.pos = self.inst.start
         self.steps = 0
         self.max_episode_steps = self.steps_per_size * self.inst.size
+        if self.shaping_mode == "bfs":
+            self._dist_map = self._bfs_distance_map()
         return self._encode(), {}
 
     def step(self, action):
@@ -130,9 +176,9 @@ class PathfindingEnv(gym.Env):
         if not self.inst.is_free(npos):
             return self._encode(), -1.0, True, False, {"invalid": True, "move": move}
 
-        old_dist = self._manhattan(self.pos)
+        old_dist = self._potential(self.pos)
         self.pos = npos
-        new_dist = self._manhattan(self.pos)
+        new_dist = self._potential(self.pos)
         shaping = self.shaping_coef * (old_dist - new_dist)
 
         if self.pos == self.inst.goal:

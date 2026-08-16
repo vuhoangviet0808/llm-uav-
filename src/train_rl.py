@@ -32,7 +32,7 @@ def load_instances(path):
     return instances
 
 
-def make_env(dcfg, instances, seed):
+def make_env(dcfg, instances, seed, shaping_mode):
     def _init():
         env = PathfindingEnv(
             grid_size_range=dcfg["grid_size_range"],
@@ -41,6 +41,7 @@ def make_env(dcfg, instances, seed):
             max_size_for_norm=dcfg["grid_size_range"][1],
             instances=instances,
             seed=seed,
+            shaping_mode=shaping_mode,
         )
         return Monitor(env)
     return _init
@@ -52,6 +53,12 @@ def main():
     parser.add_argument("--timesteps", type=int, default=300_000)
     parser.add_argument("--n_envs", type=int, default=8)
     parser.add_argument("--output_dir", default="outputs/ppo-pathfinding")
+    parser.add_argument("--shaping_mode", choices=["manhattan", "bfs"], default="manhattan",
+                         help="Reward-shaping potential function. 'manhattan' = original "
+                              "hand-designed reward (straight-line distance, ignores obstacles). "
+                              "'bfs' = the LLM-proposed improvement: true shortest-path distance "
+                              "to the goal through the actual obstacle layout. See rl_env.py's "
+                              "module docstring for the reasoning.")
     args = parser.parse_args()
 
     with open(args.config) as f:
@@ -61,8 +68,10 @@ def main():
     train_instances = load_instances(os.path.join(dcfg["out_dir"], "train.jsonl"))
     print(f"Loaded {len(train_instances)} training instances (same ones the LLM "
           f"fine-tuned on) -- cycling through them across {args.timesteps} env steps.")
+    print(f"Reward shaping mode: {args.shaping_mode}")
 
-    env = DummyVecEnv([make_env(dcfg, train_instances, seed=i) for i in range(args.n_envs)])
+    env = DummyVecEnv([make_env(dcfg, train_instances, seed=i, shaping_mode=args.shaping_mode)
+                        for i in range(args.n_envs)])
 
     model = PPO(
         "MlpPolicy",

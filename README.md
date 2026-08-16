@@ -165,6 +165,39 @@ hơn nhiều so với fine-tune một LLM — điểm mạnh của LLM nằm ở
 tổng quát/diễn giải/kết hợp ngôn ngữ tự nhiên, không phải ở việc thay thế
 RL trên chính bài toán RL đã được thiết kế tốt.
 
+### Follow-up: LLM thiết kế reward cho PPO (thay vì tự lái) — `reward_design_experiment.ipynb`
+
+Lấy cảm hứng từ hướng "LLaRA" (dùng LLM làm người thiết kế reward cho RL, thay vì để LLM tự ra
+quyết định) trong bài "Efficient Onboard Vision-Language Inference in UAV-Enabled Low-Altitude
+Economy Networks via LLM-Enhanced Optimization" (arXiv:2510.10028) — thử xem "LLM đề xuất reward
+tốt hơn cho PPO" có thắng "reward tự viết tay" không, ngay trên bài pathfinding đang có.
+
+**Đề xuất của LLM** (Claude tự lập luận khi code cùng): reward gốc dùng khoảng cách Manhattan
+(đường chim bay) để "thưởng" mỗi bước tiến gần đích — nhưng khoảng cách này KHÔNG biết vật cản ở
+đâu, nên sát tường/góc cụt nó có thể thưởng nhầm 1 nước đi dẫn vào ngõ cụt. Đề xuất thay bằng
+khoảng cách đường đi ngắn nhất THẬT (tính qua 1 lượt BFS ngược từ đích, có tính vật cản — vẫn là
+potential-based shaping hợp lệ theo Ng et al. 1999, không đổi optimal policy, chỉ "khôn" hơn).
+
+Chạy trong `src/rl_env.py` (flag `shaping_mode="bfs"` vs `"manhattan"` gốc) +
+`src/train_rl.py --shaping_mode bfs|manhattan`. Không cần GPU/LLM thật — chỉ train PPO 2 lần với
+2 reward khác nhau, cùng hyperparameter/dữ liệu, rồi so trên cùng `test.jsonl`:
+
+| Chỉ số | Manhattan (tay viết) | BFS-aware (LLM đề xuất) |
+|---|---|---|
+| success_rate | 0.78 | **0.81** |
+| invalid_move_rate | 0.005 | 0.01 |
+| avg_length_ratio_on_success | 1.0125 | 1.0136 |
+
+Cải thiện thật nhưng khiêm tốn (+3 điểm % success_rate) — đây chỉ là 1 lần chạy/1 seed, không
+phải nghiên cứu thống kê đa-seed nghiêm ngặt. Bài học: LLM "phê bình" một reward viết tay ("chỉ số
+này bỏ qua vật cản") và đề xuất 1 phiên bản khôn hơn có thể mang lại cải thiện thật, rẻ tiền, mà
+không cần đặt LLM vào vòng điều khiển trực tiếp — khác hẳn cách LLM tự sinh U/D/L/R (đã thua PPO
+rõ rệt ở phần trên).
+
+Notebook `reward_design_experiment.ipynb` đóng gói lại toàn bộ quy trình này (sinh data -> train 2
+bản PPO -> evaluate -> in bảng so sánh), chạy được trên CPU thuần (không cần GPU, không tải LLM
+thật) — mở trên Kaggle/Colab/Jupyter thường đều được, chỉ cần sửa `REPO_URL` ở ô đầu.
+
 ## Mở rộng tiếp (nếu muốn quay lại gần bài toán gốc hơn)
 
 - Thêm pin (`budget`) và action `charge`/`land`/`take off` như trong
