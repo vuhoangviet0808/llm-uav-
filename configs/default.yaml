@@ -1,6 +1,6 @@
-# Real run config: fine-tunes a ~1B-parameter open LLM with LoRA.
+# Real run config: fine-tunes a ~1-2B-parameter open LLM with LoRA.
 # Needs: a machine with a GPU (even a small one, e.g. 8GB VRAM, is enough
-# for LoRA on a 1B model) and internet access to huggingface.co.
+# for LoRA on a model this size) and internet access to huggingface.co.
 # Defaults below are tuned to just work on a free Google Colab T4 GPU.
 
 data:
@@ -14,19 +14,31 @@ data:
   out_dir: data
 
 model:
-  # ~1B Llama as requested. Requires accepting Meta's license on
-  # huggingface.co/meta-llama/Llama-3.2-1B-Instruct and an HF token
-  # (`huggingface-cli login`, or set HF_TOKEN env var).
-  name: meta-llama/Llama-3.2-1B-Instruct
-  # No HF account / gated-license hassle? Swap to an equivalent open model,
-  # e.g.:  Qwen/Qwen2.5-0.5B-Instruct   or   HuggingFaceTB/SmolLM2-1.7B-Instruct
+  # Ungated open model -- works immediately, no Hugging Face license
+  # approval or token needed. ~1.5B params.
+  name: Qwen/Qwen2.5-1.5B-Instruct
+  # Other ungated options of similar size, if you want to compare:
+  #   Qwen/Qwen2.5-0.5B-Instruct        (smaller/faster, ~0.5B)
+  #   HuggingFaceTB/SmolLM2-1.7B-Instruct
+  #
+  # Want the "true" Llama-3.2-1B-Instruct instead? It is GATED on Hugging
+  # Face -- you'll hit a 403 GatedRepoError like the one above until you:
+  #   1) log in to huggingface.co, open
+  #      https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct, and click
+  #      "Agree and access repository" (approval can take anywhere from
+  #      instant to a few hours -- it's Meta's review, not something this
+  #      code controls),
+  #   2) create a token at https://huggingface.co/settings/tokens,
+  #   3) in Colab, actually run the `from huggingface_hub import login;
+  #      login()` cell with that token BEFORE running data_gen/train/evaluate.
+  # Then set: name: meta-llama/Llama-3.2-1B-Instruct
   max_length: 640
 
 lora:
   r: 16
   alpha: 32
   dropout: 0.05
-  target_modules: null   # null = auto-detect (q_proj/k_proj/v_proj/o_proj for Llama)
+  target_modules: null   # null = auto-detect (q_proj/k_proj/v_proj/o_proj for Llama/Qwen)
 
 train:
   output_dir: outputs/lora-pathfinding

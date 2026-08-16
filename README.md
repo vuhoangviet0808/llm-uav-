@@ -74,13 +74,21 @@ zero-shot -> fine-tune LoRA -> đánh giá lại model đã fine-tune -> so sán
 báo cáo JSON (`outputs/eval_report_base.json` vs
 `outputs/eval_report_finetuned.json`).
 
-Model mặc định trong `default.yaml` là `meta-llama/Llama-3.2-1B-Instruct`
-(đúng ~1B tham số như bạn muốn). Model này bị "gate": cần vào
-huggingface.co/meta-llama/Llama-3.2-1B-Instruct bấm "Agree and access", rồi
-đăng nhập bằng token (`huggingface-cli login` hoặc set biến môi trường
-`HF_TOKEN`). Nếu không muốn xin quyền, đổi `model.name` trong config sang
-một model mở hoàn toàn cùng tầm cỡ, ví dụ `Qwen/Qwen2.5-0.5B-Instruct` hoặc
-`HuggingFaceTB/SmolLM2-1.7B-Instruct` — code không cần sửa gì thêm.
+Model mặc định trong `default.yaml` là `Qwen/Qwen2.5-1.5B-Instruct` —
+model mở hoàn toàn (Apache 2.0), chạy được ngay, không cần xin quyền hay
+token gì cả. Đây là lựa chọn nên dùng để chạy thử nhanh.
+
+Nếu vẫn muốn dùng đúng `meta-llama/Llama-3.2-1B-Instruct` (~1B, đúng như đề
+xuất ban đầu): model này bị Meta "gate" trên Hugging Face, sẽ báo lỗi
+`403 GatedRepoError` cho tới khi bạn (1) đăng nhập huggingface.co, vào
+https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct bấm "Agree and
+access repository" (Meta duyệt thủ công, có thể ngay lập tức hoặc mất vài
+giờ), (2) tạo token tại huggingface.co/settings/tokens, và (3) trong Colab
+thực sự chạy ô `from huggingface_hub import login; login()` với token đó
+*trước khi* chạy data_gen/train/evaluate. Sau đó đổi lại `model.name` trong
+config. Nếu chỉ muốn thử ngay không đợi duyệt quyền, sửa nhanh 1 dòng bằng:
+`!sed -i 's|Qwen/Qwen2.5-1.5B-Instruct|meta-llama/Llama-3.2-1B-Instruct|' configs/default.yaml`
+trong 1 ô Colab, sau khi đã login.
 
 LoRA r=16/alpha=32 trên 1B tham số chạy được trên GPU ~8GB VRAM, kể cả GPU T4
 miễn phí của Colab (config mặc định đã để `fp16: true, bf16: false` vì T4
